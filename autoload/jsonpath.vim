@@ -166,7 +166,7 @@ function! jsonpath#scan_buffer_vimscript(search_for, to_line, to_column, from_li
                 \ 'col': cnr + 1,
                 \ 'text': char . ' = ' . (stack_modified > 0 ? 'push' : 'pop') . ' => ' . join(stack, g:jsonpath_delimeter)
                 \})
-          
+
           " Check if the sought search_for path has been reached?
           if stack_modified == 1 && is_searching && s:is_equal_lists(stack, a:search_for)
             return [bufnr('%'), lnr, cnr, 0]
