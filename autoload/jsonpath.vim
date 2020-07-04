@@ -17,6 +17,9 @@ let s:escapes = {
   \ '"': "\"",
   \ '\': "\\"}
 
+let s:type_list = type([])
+let s:type_dict = type({})
+
 " Returns true iff the lists A and B are equal after converting all items to strings
 " The VimScript built-in == operator can't be used since it does strict comparisons
 function s:is_equal_lists(a, b) "{{{
@@ -303,6 +306,86 @@ function! jsonpath#command(input) range "{{{
     call jsonpath#echo(a:firstline)
   else
     call jsonpath#goto(a:input, a:lastline, 0, a:firstline)
+  endif
+endfunction "}}}
+
+" Completion function for the :JsonPath command
+function! jsonpath#complete(argument_lead, _cmdline, _cursor) range "{{{
+  let file_contents = join(getbufline('%', 0, line('$')), "\n")
+
+  try
+    let data = json_decode(file_contents)
+  catch /^Vim\%((\a\+)\)\=:E\(491\|938\):/
+    " json decode error:
+    " - E491: Invalid json
+    " - E938: Duplicate keys
+    return ''
+  endtry
+
+  try
+    let keepempty = 1
+    let path = split(a:argument_lead, '\.', keepempty)
+    let last_key = ''
+    if len(path) > 0
+      let last_key = remove(path, len(path) - 1)
+    endif
+    let prefix = join(path, '.')
+
+    " Dereference the path so far
+    for key in path
+      let data = s:dereference_key(data, key)
+    endfor
+
+    " Get completions at the current level
+    let completions = s:get_completion_keys(data)
+
+    " Is the last key a complete match? If so, dereference one more level to
+    " get next completions
+    if index(completions, last_key) >= 0
+      let data = s:dereference_key(data, last_key)
+      let completions = s:get_completion_keys(data)
+
+      if prefix != ''
+        let prefix .= '.'.last_key
+      else
+        let prefix = last_key
+      endif
+    endif
+
+    " Attach current path to result so Vim can match entire input
+    if prefix != ''
+      let completions = map(completions, '"'.prefix.'.". v:val')
+    endif
+
+    return join(completions, "\n")
+  catch /^CompletionError:/
+    echomsg v:exception
+    return ''
+  endtry
+endfunction "}}}
+
+function! s:dereference_key(data, key) "{{{
+  let data = a:data
+  let key = a:key
+
+  if type(data) == s:type_list && key =~# '^\d\+' && len(data) > str2nr(key)
+    return data[str2nr(key)]
+  elseif type(data) == s:type_dict && has_key(data, key)
+    return data[key]
+  else
+    throw "CompletionError: Couldn't dereference key: " . key
+  endif
+endfunction "}}}
+
+function! s:get_completion_keys(data) "{{{
+  let data = a:data
+
+  if type(data) == s:type_list
+    return map(range(0, len(data) - 1), 'string(v:val)')
+  elseif type(data) == s:type_dict
+    return keys(data)
+  else
+    throw "CompletionError: Couldn't list completions, key is not an array or dict"
   endif
 endfunction "}}}
 
